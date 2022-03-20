@@ -1,13 +1,15 @@
 package main
 
 import (
-	"encoding/json"
-	"flag"
-	"fmt"
-	"log"
-	"os"
-	// "os/exec"
-)
+		"bufio"
+		"encoding/json"
+		"flag"
+		"fmt"
+		"log"
+		"os"
+		"os/exec"
+		"strings"
+		)
 
 type Configuration struct {
 	Scan struct {
@@ -42,46 +44,76 @@ func getConfig() Configuration {
 	return Config
 }
 
-// func scan_handler(target string, timestamp string, portQuant string, portType string, osDetection bool)
+func readLines(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
 
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	return lines, scanner.Err()
+}
+
+func masscanParser(path string) (string, string) {
+	lines, err := readLines(path)
+
+	if err != nil {
+		fmt.Printf("Error: %v", err)
+		os.Exit(1)
+	}
+
+	var addresses_raw []string
+	var ports_raw []string
+
+	for _, line := range lines {
+		if len(strings.Split(line, " ")) > 2{
+			addresses_raw = append(addresses_raw, strings.Split(line, " ")[3])
+			ports_raw = append(ports_raw, strings.Split(line, " ")[2])
+		}
+	}
+
+	addresses := strings.Join(addresses_raw, " ")
+	ports := strings.Join(ports_raw, ",")
+
+	return addresses, ports
+}
+
+// func scan_handler(target string, timestamp string, portQuant string, portType string, osDetection bool)
 func main() {
 	config := getConfig().Scan
 	massCmd := fmt.Sprintf("masscan %s", config.Targets)
 	massCmd += fmt.Sprintf(" -p%s", config.Ports)
-	massCmd += fmt.Sprintf(" --rate %s -oL mass.txt", config.Rate)
+	massCmd += fmt.Sprintf(" --rate %s -oL mass_results", config.Rate)
 
-	fmt.Printf(massCmd)
-	/*
-		err := exec.Command(massCmd)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("Scan complete.")
-	*/
+	err := exec.Command(massCmd)
 
-	/*
-		m := masscan.New()
-		m.SetPorts(config.Scan.Ports)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		m.SetRanges(config.Scan.Targets)
+	fmt.Println("Masscan complete.")
 
-		m.SetRate(config.Scan.Rate)
+	addresses, ports := masscanParser("./mass_results")
 
-		err := m.Run()
-		if err != nil {
-			fmt.Println("Scan failed: ", err)
-			return
-		}
+	nmapCmd := "nmap "
 
-		results, err := m.Parse()
-		if err != nil {
-			fmt.Println("Parsed scan results: ", err)
-			return
-		}
+	if config.osDetection {
+		nmapCmd += "-O "
+	}
 
-		for _, result := range results {
-			fmt.Println(result)
-		}
-	*/
+	nmapCmd += "-p " + ports + " -Pn " + addresses + " -oX nmap_results.txt"
 
+	err = exec.Command(nmapCmd)
+
+	if err != nil {
+		fmt.Printf("Error: %v", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Nmap complete.")
 }
